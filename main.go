@@ -35,6 +35,7 @@ type Config struct {
 	RoleID             string   `json:"role_id"`
 	SecretID           string   `json:"secret_id"`
 	SecretIDFile       string   `json:"secret_id_file"`
+	Token              string   `json:"-"` // from VAULT_TOKEN only, used instead of AppRole
 	InsecureSkipVerify bool     `json:"insecure_skip_verify"`
 	Timeout            string   `json:"timeout"`
 	Paths              []string `json:"paths"`
@@ -177,10 +178,17 @@ func run(ctx context.Context, cfgPath, restoreFrom string, stdin io.Reader, stdo
 		return err
 	}
 
-	if err = c.login(ctx, cfg.AppRoleMount, cfg.RoleID, cfg.SecretID); err != nil {
-		return fmt.Errorf("approle login: %w", err)
+	if cfg.Token != "" {
+		// The token belongs to the caller, so it is neither renewed nor revoked.
+		if err = c.useToken(ctx, cfg.Token); err != nil {
+			return fmt.Errorf("token lookup: %w", err)
+		}
+	} else {
+		if err = c.login(ctx, cfg.AppRoleMount, cfg.RoleID, cfg.SecretID); err != nil {
+			return fmt.Errorf("approle login: %w", err)
+		}
+		defer c.revoke(ctx)
 	}
-	defer c.revoke(ctx)
 
 	if restoreFrom != "" {
 		return c.restore(ctx, backup)
@@ -215,6 +223,7 @@ func loadConfig(path string) (*Config, error) {
 	}
 
 	// Allow credentials to be kept out of the config file.
+	cfg.Token = os.Getenv("VAULT_TOKEN")
 	if v := os.Getenv("VAULT_ROLE_ID"); v != "" {
 		cfg.RoleID = v
 	}
@@ -225,8 +234,11 @@ func loadConfig(path string) (*Config, error) {
 	switch {
 	case cfg.Address == "":
 		return nil, fmt.Errorf("%w: address is required", errConfig)
-	case cfg.RoleID == "" || cfg.SecretID == "":
-		return nil, fmt.Errorf("%w: role_id and secret_id (or secret_id_file) are required", errConfig)
+	case cfg.Token != "" && (cfg.RoleID != "" || cfg.SecretID != ""):
+		return nil, fmt.Errorf("%w: VAULT_TOKEN and AppRole credentials are both set, unset one", errConfig)
+	case cfg.Token == "" && (cfg.RoleID == "" || cfg.SecretID == ""):
+		return nil, fmt.Errorf(
+			"%w: VAULT_TOKEN, or role_id and secret_id (or secret_id_file), are required", errConfig)
 	}
 	return cfg, nil
 }
@@ -385,6 +397,13 @@ func (c *client) login(ctx context.Context, mount, roleID, secretID string) erro
 	c.renewable = resp.Auth.Renewable && c.lease > 0
 	c.renewAt = time.Now().Add(c.lease / renewDivisor)
 	return nil
+}
+
+// useToken authenticates with an existing token and checks that Vault accepts it.
+// The token is not renewed: a run cannot outlast the token's TTL.
+func (c *client) useToken(ctx context.Context, token string) error {
+	c.token = token
+	return c.do(ctx, "GET", "auth/token/lookup-self", nil, nil)
 }
 
 // renew extends the token so long backups do not outlive it. Once the token

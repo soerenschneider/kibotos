@@ -295,6 +295,21 @@ path "kv1/*" { capabilities = ["read", "list"] }
 		}
 	})
 
+	t.Run("given token is used and not revoked", func(t *testing.T) {
+		token := field[string](t, v.api("POST", "auth/token/create", map[string]any{"policies": []string{"full"}}),
+			"auth", "client_token")
+		t.Setenv("VAULT_TOKEN", token)
+		cfg := writeConfig(t, map[string]any{"address": v.addr, "paths": []string{"secret/app"}})
+		var out bytes.Buffer
+		if err := run(t.Context(), cfg, "", nil, &out); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out.String(), `"secret/app/db"`) {
+			t.Errorf("backup misses secret/app/db: %s", out.String())
+		}
+		v.api("POST", "auth/token/lookup", map[string]any{"token": token}) // fails the test if the token is gone
+	})
+
 	t.Run("insufficient permissions fail the backup", func(t *testing.T) {
 		role, secret := v.approle("partial", `
 path "secret/metadata"   { capabilities = ["list"] }

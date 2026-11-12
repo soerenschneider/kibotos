@@ -22,6 +22,10 @@ import (
 
 func TestMain(m *testing.M) {
 	retryDelay = time.Millisecond
+	// Credentials from the developer's shell, such as VAULT_TOKEN, would change how loadConfig authenticates.
+	for _, k := range credentialEnv {
+		_ = os.Unsetenv(k)
+	}
 	m.Run()
 }
 
@@ -107,6 +111,8 @@ func (f *fakeVault) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"auth": map[string]any{
 			"client_token": testToken, "lease_duration": f.renewSeconds, "renewable": true,
 		}})
+	case r.Method == http.MethodGet && path == "auth/token/lookup-self":
+		writeJSON(w, 200, map[string]any{"data": map[string]any{"ttl": f.leaseSeconds}})
 	case r.Method == http.MethodPost && path == "auth/token/revoke-self":
 		f.mu.Lock()
 		f.revoked = true
@@ -989,9 +995,12 @@ func TestLoadConfig(t *testing.T) {
 	})
 }
 
+//nolint:gochecknoglobals // read-only list shared by TestMain and clearCredentialEnv
+var credentialEnv = []string{"VAULT_TOKEN", "VAULT_ROLE_ID", "VAULT_SECRET_ID", "VAULT_SECRET_ID_FILE"}
+
 func clearCredentialEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"VAULT_ROLE_ID", "VAULT_SECRET_ID", "VAULT_SECRET_ID_FILE"} {
+	for _, k := range credentialEnv {
 		t.Setenv(k, "")
 	}
 }
@@ -1063,6 +1072,35 @@ func TestLoadConfigEnv(t *testing.T) {
 		}
 	})
 
+	t.Run("VAULT_TOKEN instead of AppRole", func(t *testing.T) {
+		clearCredentialEnv(t)
+		t.Setenv("VAULT_TOKEN", "env-token")
+		cfg, err := loadConfig(writeConfig(t, map[string]any{"address": "http://x", "paths": []string{"secret"}}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Token != "env-token" {
+			t.Errorf("token = %q, want env-token", cfg.Token)
+		}
+	})
+
+	t.Run("VAULT_TOKEN and AppRole", func(t *testing.T) {
+		for name, cfg := range map[string]map[string]any{
+			"role_id in config":   {"address": "http://x", "role_id": "r"},
+			"secret_id in config": {"address": "http://x", "secret_id": "s"},
+			"secret_id_file":      {"address": "http://x", "secret_id_file": writeSecret(t, "s")},
+		} {
+			t.Run(name, func(t *testing.T) {
+				clearCredentialEnv(t)
+				t.Setenv("VAULT_TOKEN", "env-token")
+				_, err := loadConfig(writeConfig(t, cfg))
+				if err == nil || !strings.Contains(err.Error(), "both set") {
+					t.Errorf("err = %v, want both set error", err)
+				}
+			})
+		}
+	})
+
 	t.Run("both env variables", func(t *testing.T) {
 		clearCredentialEnv(t)
 		t.Setenv("VAULT_SECRET_ID", "a")
@@ -1112,6 +1150,49 @@ func TestLoadConfigEnv(t *testing.T) {
 			}
 		})
 	}
+}
+
+// runWithToken backs up path from fv, authenticating with token through VAULT_TOKEN.
+func runWithToken(t *testing.T, fv *fakeVault, token, path string) (string, error) {
+	t.Helper()
+	clearCredentialEnv(t)
+	t.Setenv("VAULT_TOKEN", token)
+	srv := httptest.NewServer(fv)
+	t.Cleanup(srv.Close)
+	var out bytes.Buffer
+	err := run(t.Context(), writeConfig(t, map[string]any{"address": srv.URL, "paths": []string{path}}), "", nil, &out)
+	return out.String(), err
+}
+
+//nolint:paralleltest // sets VAULT_TOKEN
+func TestGivenToken(t *testing.T) {
+	t.Run("used, not renewed or revoked", func(t *testing.T) {
+		fv := newFakeVault()
+		out, err := runWithToken(t, fv, testToken, "secret/top")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, `"secret/top"`) {
+			t.Errorf("output misses secret/top: %s", out)
+		}
+		if fv.revoked || fv.renewals != 0 {
+			t.Errorf("revoked=%v renewals=%d, want the caller's token left alone", fv.revoked, fv.renewals)
+		}
+		if slices.ContainsFunc(fv.requests, func(r string) bool { return strings.HasSuffix(r, "/login") }) {
+			t.Errorf("logged in although a token was given: %v", fv.requests)
+		}
+	})
+
+	t.Run("rejected token fails before any read", func(t *testing.T) {
+		fv := newFakeVault()
+		out, err := runWithToken(t, fv, "s.wrong", "secret")
+		if err == nil || !strings.Contains(err.Error(), "token lookup") || !isForbidden(err) {
+			t.Fatalf("err = %v, want forbidden token lookup", err)
+		}
+		if out != "" || len(fv.requests) != 1 {
+			t.Errorf("output %q, requests %v; want none after the lookup", out, fv.requests)
+		}
+	})
 }
 
 func TestNewClient(t *testing.T) {
