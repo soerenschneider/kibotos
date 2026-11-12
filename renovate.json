@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "packageRules": [
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "GitHub Actions Updates",
+      "automerge": true
+    },
+    {
+      "managers": ["gomod"],
+      "commitMessagePrefix": "fix(deps): ",
+      "postUpdateOptions": ["gomodTidy"]
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Versions annotated with '# renovate: datasource=... depName=...' on the line above",
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)Makefile$/", "/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s*\\n[^\\n]*:\\s*(?<currentValue>[^\\s:]+)\\s*\\n"
+      ]
+    }
+  ]
+}

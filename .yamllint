@@ -1,0 +1,6 @@
+---
+extends: default
+
+rules:
+  line-length:
+    max: 120 # same as lll/golines in .golangci.yaml

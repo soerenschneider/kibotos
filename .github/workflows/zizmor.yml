@@ -1,0 +1,32 @@
+---
+name: zizmor
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout, if the repository is private
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@v0.8.1
+        with:
+          # Fail the check on findings and show them on the PR, instead of only
+          # uploading them to code scanning (which needs Advanced Security on
+          # private repositories and never fails the job).
+          advanced-security: false
+          annotations: true
+          # renovate: datasource=pypi depName=zizmor
+          version: 1.32.0

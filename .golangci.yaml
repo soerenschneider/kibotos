@@ -1,0 +1,190 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  build-tags:
+    - integration
+
+output:
+  sort-order:
+    - linter
+    - file
+
+linters:
+  # Start from every linter and opt out explicitly.
+  default: all
+  disable:
+    - depguard # needs a per-project allow/deny list
+    - exhaustruct # requires every struct field set; too noisy for stdlib types
+    - exhaustruct_v5 # same as exhaustruct
+    - gomodguard # deprecated, replaced by gomodguard_v2
+    - forbidigo # this is a CLI, fmt.Print* is legitimate
+    - nlreturn # stylistic, overlaps with wsl
+    - noinlineerr # forbids idiomatic `if err := f(); err != nil`
+    - varnamelen # flags idiomatic short names (i, k, v, tt)
+    - wsl # deprecated, replaced by wsl_v5
+    - wsl_v5 # whitespace style is subjective
+
+  settings:
+    cyclop:
+      max-complexity: 15
+      package-average: 10
+    errcheck:
+      check-type-assertions: true
+      check-blank: false # an explicit `_ =` is a reviewed decision
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+    exhaustive:
+      default-signifies-exhaustive: true
+    funlen:
+      lines: 80
+      statements: 50
+      ignore-comments: true
+    gocognit:
+      min-complexity: 20
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    gocritic:
+      enable-all: true
+      disabled-checks:
+        - hugeParam # premature optimisation
+        - sloppyReassign # conflicts with govet strict shadow
+        - unnamedResult
+        - whyNoLint # covered by nolintlint
+    godot:
+      scope: declarations
+      capital: true
+    gosec:
+      excludes:
+        - G104 # unhandled errors: covered by errcheck
+      config:
+        global:
+          audit: true
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # memory layout micro-optimisation
+      settings:
+        shadow:
+          strict: true
+    ireturn:
+      allow: # defaults plus type parameters, which are not interfaces
+        - anon
+        - error
+        - empty
+        - stdlib
+        - generic
+    lll:
+      line-length: 120
+    misspell:
+      locale: US
+    mnd:
+      ignored-functions:
+        - os.Chmod
+        - os.Mkdir.*
+        - os.OpenFile
+        - os.WriteFile
+        - time.Duration
+    nakedret:
+      max-func-lines: 0
+    nestif:
+      min-complexity: 4
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+    revive:
+      enable-all-rules: true
+      rules:
+        - name: add-constant
+          disabled: true # covered by mnd/goconst
+        - name: cognitive-complexity
+          disabled: true # covered by gocognit
+        - name: cyclomatic
+          disabled: true # covered by cyclop
+        - name: function-length
+          disabled: true # covered by funlen
+        - name: line-length-limit
+          disabled: true # covered by lll
+        - name: max-public-structs
+          disabled: true
+        - name: unused-receiver
+          disabled: true
+        - name: package-comments
+          disabled: true # single-binary main package
+        - name: confusing-results
+          disabled: true # conflicts with nonamedreturns
+        - name: unhandled-error
+          arguments: # same defaults as errcheck
+            - fmt.Print.*
+            - fmt.Fprint.*
+    staticcheck:
+      checks:
+        - all
+    tagliatelle:
+      case:
+        rules:
+          json: snake # matches the Vault API
+    testifylint:
+      enable-all: true
+    usestdlibvars:
+      http-method: true
+      http-status-code: true
+      time-weekday: true
+      time-month: true
+      time-layout: true
+      crypto-hash: true
+
+  exclusions:
+    generated: strict
+    warn-unused: true
+    presets: []
+    rules:
+      # Tests are allowed to be long, repetitive and use magic values.
+      - path: _test\.go
+        linters:
+          - funlen
+          - goconst
+          - mnd
+          - dupl
+          - maintidx
+          - gocognit
+          - cyclop
+          - gocyclo
+          - lll
+          - err113
+      # Fixtures look like credentials, and the integration tests run docker with variable args.
+      - path: _test\.go
+        linters:
+          - gosec
+        text: "G101|G204|G702"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new: false
+
+formatters:
+  enable:
+    - gci
+    - gofumpt
+    - goimports
+    - golines
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule
+    gofumpt:
+      extra:
+        group-params: true
+        clothe-returns: true
+    golines:
+      max-len: 120
+  exclusions:
+    generated: strict

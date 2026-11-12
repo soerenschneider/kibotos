@@ -1,0 +1,11 @@
+{
+  "address": "https://vault.example.com:8200",
+  "namespace": "",
+  "approle_mount": "approle",
+  "role_id": "",
+  "secret_id": "",
+  "secret_id_file": "",
+  "insecure_skip_verify": false,
+  "timeout": "30s",
+  "paths": ["secret", "kv-v1/team-a"]
+}

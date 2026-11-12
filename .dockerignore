@@ -1,0 +1,7 @@
+# Only what the build needs. config.json may hold a secret_id and must never
+# end up in the build context.
+*
+!go.mod
+!Makefile
+!*.go
+*_test.go

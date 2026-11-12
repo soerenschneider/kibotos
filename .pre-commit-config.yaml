@@ -1,0 +1,57 @@
+---
+# Install with: pre-commit install
+# Installs the commit-msg and pre-push hook types too, see default_install_hook_types.
+# Slow checks (tests, trivy) run on push, everything else on commit.
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+  - pre-push
+default_stages:
+  - pre-commit
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+      - id: check-json
+      - id: check-yaml
+      - id: detect-private-key
+
+  - repo: https://github.com/soerenschneider/pre-commit-hooks
+    rev: v1.6.3
+    hooks:
+      - id: conventional-commit # release-please derives versions from commit messages
+      - id: gitleaks
+      - id: yamllint
+      - id: go-fmt
+      - id: golangci-lint # picks up .golangci.yaml, including the integration build tag
+      - id: go-unit-tests # unit tests only, integration tests need docker
+        stages: [pre-push]
+      - id: trivy # vulns in go.mod, Dockerfile misconfig, secrets
+        stages: [pre-push]
+
+  - repo: local
+    hooks:
+      - id: go-mod-tidy
+        name: go mod tidy
+        entry: go mod tidy -diff
+        language: system
+        files: (\.go|go\.mod|go\.sum)$
+        pass_filenames: false
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.32.0
+    hooks:
+      - id: zizmor

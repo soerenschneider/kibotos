@@ -1,0 +1,5 @@
+/.idea
+kibotos
+config.json
+/builds
+/coverage.*
